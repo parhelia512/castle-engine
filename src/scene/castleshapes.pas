@@ -1,5 +1,5 @@
 {
-  Copyright 2003-2023 Michalis Kamburelis.
+  Copyright 2003-2024 Michalis Kamburelis.
 
   This file is part of "Castle Game Engine".
 
@@ -138,9 +138,11 @@ type
       This is a shortcut for @link(Shape).State. }
     function State: TX3DGraphTraverseState;
 
-    { Use State.Transform to update triangle @link(TTriangle.World) geometry
-      from triangle @link(TTriangle.Local) geometry. }
-    procedure UpdateWorld;
+    { Use State.Transform to update @link(TTriangle.SceneSpace) geometry
+      from @link(TTriangle.Local) geometry. }
+    procedure UpdateSceneSpace;
+
+    procedure UpdateWorld; deprecated 'use UpdateSceneSpace';
 
     { X3D shape node of this triangle. May be @nil in case of VRML 1.0. }
     function ShapeNode: TAbstractShapeNode;
@@ -167,15 +169,6 @@ type
       (with Material.Transparency > 0) and non-shadow-casting triangles
       (with Appearance.shadowCaster = FALSE). }
     function IgnoreForShadowRays: boolean;
-
-    {$ifndef CONSERVE_TRIANGLE_MEMORY}
-    { For a given position (in world coordinates), return the smooth
-      normal vector at this point, with the resulting normal vector
-      in world coordinates.
-
-      @seealso TTriangle.INormal }
-    function INormalWorldSpace(const Point: TVector3): TVector3;
-    {$endif}
   end;
 
   { Tree of shapes.
@@ -283,7 +276,12 @@ type
       and stops further processing. }
     function EnumerateTextures(const Enumerate: TEnumerateShapeTexturesFunction): Pointer; virtual; abstract;
 
-    function DebugInfo(const Indent: string = ''): string; virtual; abstract;
+    { Describe the shapes tree, recursively (with children),
+      multi-line (ends with newline too). }
+    function DebugInfo(const Indent: string = ''): string; virtual;
+
+    { Describe this shape, not recursively. }
+    function DebugInfoWithoutChildren: String; virtual;
 
     { Using the TX3DNode.InternalSceneShape field,
       you can associate X3D node with a number of TShapeTree instances.
@@ -453,6 +451,16 @@ type
     procedure FastTransformUpdateCore(var AnythingChanged: Boolean;
       const ParentTransformation: TTransformation); override;
   public
+    { List of TGeneratedShadowMap instances that should affect this shape.
+
+      May be @nil, equal to an empty list.
+
+      Created on-demand, never owns the children.
+      All children are always non-nil TGeneratedShadowMapNode instances.
+
+      @exclude }
+    InternalShadowMaps: TX3DNodeList;
+
     { Constructor.
       @param(ParentInfo Recursive information about parents,
         for the geometry node of given shape.
@@ -578,8 +586,9 @@ type
 
       To initialize this, add ssTriangles to @link(InternalSpatial) property,
       otherwise it's @nil. Parent TCastleSceneCore will take care of this
-      (when parent TCastleSceneCore.Spatial contains ssDynamicCollisions, then
-      all shapes contain ssTriangles within their InternalSpatial).
+      (when parent TCastleSceneCore.PreciseCollisions = @true
+      (that is when TCastleSceneCore.Spatial contains ssDynamicCollisions)
+      then all shapes contain ssTriangles within their InternalSpatial).
 
       Parent TCastleSceneCore will take care to keep this octree always updated.
 
@@ -709,12 +718,37 @@ type
       LocalTriangulate returns coordinates in local shape transformation
       (that is, not transformed by State.Transform yet).
 
+      @param(FrontFaceAlwaysCcw
+        This parameter determines what is the "front" face of the
+        generated triangles. This "front" face matters e.g.
+
+        @unorderedList(
+          @item(In case the shape uses backface-culling,
+            when @link(TAbstractGeometryNode.Solid).
+            In case of some model formats, like STL, the backface-culling
+            is always "on".
+          )
+          @item(In case we use @link(TCastleMeshCollider) with
+            @link(TCastleMeshCollider.DoubleSided) = @false.
+          )
+        )
+
+        When FrontFaceAlwaysCcw is @false (default), the order of the vertexes of
+        each triangle follows the order in polygons in the original geometry.
+
+        When FrontFaceAlwaysCcw is @true (default), triangles are generated
+        such that the front face is always CCW (looks counter-clockwise
+        from the outside).
+      )
+
       @groupBegin }
-    procedure Triangulate(const TriangleEvent: TTriangleEvent);
-    procedure LocalTriangulate(const TriangleEvent: TTriangleEvent);
+    procedure Triangulate(const TriangleEvent: TTriangleEvent;
+      const FrontFaceAlwaysCcw: Boolean = false);
+    procedure LocalTriangulate(const TriangleEvent: TTriangleEvent;
+      const FrontFaceAlwaysCcw: Boolean = false);
     { @groupEnd }
 
-    function DebugInfo(const Indent: string = ''): string; override;
+    function DebugInfoWithoutChildren: String; override;
     function NiceName: string;
 
     { Local geometry changes very often (like every frame).
@@ -847,6 +881,8 @@ type
     function IterateBeginIndex(OnlyActive: boolean): Integer; override;
     function IterateEndIndex(OnlyActive: boolean): Cardinal; override;
     {$endif}
+
+    function DebugInfoWithoutChildren: String; override;
   end;
 
   { Node of the TShapeTree transforming it's children.
@@ -866,6 +902,7 @@ type
     constructor Create(const AParentScene: TX3DEventsEngine);
     destructor Destroy; override;
     procedure FastTransformUpdate(var AnythingChanged: Boolean); override;
+    function DebugInfoWithoutChildren: String; override;
 
     property TransformFunctionality: TTransformFunctionality
       read FTransformFunctionality write SetTransformFunctionality;
@@ -876,8 +913,6 @@ type
       Owned by this TShapeTreeTransform instance. You should assign
       to it when you set TransformNode. }
     property TransformState: TX3DGraphTraverseState read FTransformState;
-
-    function DebugInfo(const Indent: string = ''): string; override;
   end;
 
   { Node of the TShapeTree representing the LOD (level of detail) alternative.
@@ -934,6 +969,7 @@ type
     function IterateBeginIndex(OnlyActive: boolean): Integer; override;
     function IterateEndIndex(OnlyActive: boolean): Cardinal; override;
     {$endif}
+    function DebugInfoWithoutChildren: String; override;
   end;
 
   TProximitySensorInstance = class(TShapeTree)
@@ -954,7 +990,7 @@ type
     property Node: TProximitySensorNode read FNode write FNode;
 
     function EnumerateTextures(const Enumerate: TEnumerateShapeTexturesFunction): Pointer; override;
-    function DebugInfo(const Indent: string = ''): string; override;
+    function DebugInfoWithoutChildren: String; override;
   end;
 
   TVisibilitySensorInstance = class(TShapeTree)
@@ -978,7 +1014,7 @@ type
     property Node: TVisibilitySensorNode read FNode write FNode;
 
     function EnumerateTextures(const Enumerate: TEnumerateShapeTexturesFunction): Pointer; override;
-    function DebugInfo(const Indent: string = ''): string; override;
+    function DebugInfoWithoutChildren: String; override;
   end;
 
   { Iterates over all TShape items that would be enumerated by
@@ -1103,13 +1139,18 @@ begin
   Result := TShape(InternalShape).State;
 end;
 
+procedure TTriangleHelper.UpdateSceneSpace;
+begin
+  SceneSpace.Triangle := Local.Triangle.Transform(State.Transformation.Transform);
+  {$ifndef CONSERVE_TRIANGLE_MEMORY_MORE}
+  SceneSpace.Plane := SceneSpace.Triangle.NormalizedPlane;
+  SceneSpace.Area := SceneSpace.Triangle.Area;
+  {$endif}
+end;
+
 procedure TTriangleHelper.UpdateWorld;
 begin
-  World.Triangle := Local.Triangle.Transform(State.Transformation.Transform);
-  {$ifndef CONSERVE_TRIANGLE_MEMORY_MORE}
-  World.Plane := World.Triangle.NormalizedPlane;
-  World.Area := World.Triangle.Area;
-  {$endif}
+  UpdateSceneSpace;
 end;
 
 function TTriangleHelper.ShapeNode: TAbstractShapeNode;
@@ -1155,13 +1196,6 @@ begin
   Result := ({ IsTransparent } Transparency > SingleEpsilon) or
     NonShadowCaster(State);
 end;
-
-{$ifndef CONSERVE_TRIANGLE_MEMORY}
-function TTriangleHelper.INormalWorldSpace(const Point: TVector3): TVector3;
-begin
-  Result := State.Transformation.Transform.MultDirection(INormalCore(Point)).Normalize;
-end;
-{$endif not CONSERVE_TRIANGLE_MEMORY}
 
 { TShapeTree ------------------------------------------------------------ }
 
@@ -1262,6 +1296,29 @@ begin
         [ClassName, Node.NiceName]);
       Exit;
     end;
+
+    { TODO: Node.InternalSceneShape may be TGLShape here,
+      see testcase from "DirectionalLight crash in CGE" from Jan Adamec.
+
+      As a temporary workaround,
+      instead of failing assertion "Assert(Node.InternalSceneShape is TShapeTreeList);"
+      or crashing at reading "TShapeTreeList(Node.InternalSceneShape).Count",
+      detect it and behave gracefully for now.
+
+      This should be investigated and fixed properly.
+      But also, processing of CastleInternalShadowMaps, which is likely
+      the fault of this, is doomed to be removed in favor of different
+      shadow maps application for
+      https://github.com/castle-engine/castle-engine/issues/284 anyway.
+    }
+    if not (Node.InternalSceneShape is TShapeTreeList) then
+    begin
+      WritelnWarning('TODO: Calling %s.UnAssociateNode on X3D node that is associated with something unexpected: %s.',
+        [ClassName, Node.NiceName]);
+      Node.InternalSceneShape := nil;
+      Exit;
+    end;
+
     Assert(Node.InternalSceneShape is TShapeTreeList);
     if TShapeTreeList(Node.InternalSceneShape).Count = 1 then
     begin
@@ -1364,6 +1421,16 @@ begin
   FastTransformUpdateCore(AnythingChanged, T);
 end;
 
+function TShapeTree.DebugInfo(const Indent: String): String;
+begin
+  Result := Indent + DebugInfoWithoutChildren + NL;
+end;
+
+function TShapeTree.DebugInfoWithoutChildren: String;
+begin
+  Result := ClassName;
+end;
+
 { TShape -------------------------------------------------------------- }
 
 constructor TShape.Create(const AParentScene: TX3DEventsEngine;
@@ -1405,6 +1472,7 @@ end;
 
 destructor TShape.Destroy;
 begin
+  FreeAndNil(InternalShadowMaps);
   FreeAndNil(FShadowVolumes);
   FreeProxy;
   FreeAndNil(FNormals);
@@ -1465,7 +1533,7 @@ begin
        (AGeometry.TexCoordField.Value <> nil) and
        { TODO: This workarounds assertion failure in UnAssociateNode
          when using shadow maps on a primitive, like Sphere.
-         Reproducible by view3dscene (open and close
+         Reproducible by castle-model-viewer (open and close
          demo-models/shadow_maps/primitives.x3dv )
          and automatic tests (when TTestOpeningAndRendering3D.TestScene
          opens and closes tests/data/warning_when_new_node_as_shadow_map_light.x3dv ).
@@ -2113,7 +2181,8 @@ begin
     end else
     begin
       Result.Triangles.Capacity := TrianglesCount;
-      LocalTriangulate({$ifdef FPC}@{$endif}Result.AddItemTriangle);
+      LocalTriangulate({$ifdef FPC}@{$endif}Result.AddItemTriangle,
+        { FrontFaceAlwaysCcw should not matter } false);
     end;
   except Result.Free; raise end;
 
@@ -2161,8 +2230,8 @@ begin
         it (calling "Shape.InternalOctreeTriangles" right after setting
         "Shape.InternalSpatial := Value") for some time,
         but it just wasn't perfect,
-        because if we did "Scene.Spatial := [ssDynamicCollisions]"
-        but later "Scene.URL := ..." then didn't create octree for new shapes.
+        because if we did "Scene.PreciseCollisions := true"
+        but later "Scene.URL := ..." then it didn't create octree for new shapes.
 
         Note: InternalOctreeTriangles only does the job if FSpatial is already set to non-empty.
       }
@@ -2768,6 +2837,13 @@ begin
 
   Result := HandleTextureNode(OriginalGeometry.FontTextureNode);
   if Result <> nil then Exit;
+
+  if InternalShadowMaps <> nil then
+    for I := 0 to InternalShadowMaps.Count - 1 do
+    begin
+      Result := HandleTextureNode(InternalShadowMaps[I] as TGeneratedShadowMapNode);
+      if Result <> nil then Exit;
+    end;
 end;
 
 type
@@ -2865,7 +2941,8 @@ begin
     Result := nil;
 end;
 
-procedure TShape.LocalTriangulate(const TriangleEvent: TTriangleEvent);
+procedure TShape.LocalTriangulate(const TriangleEvent: TTriangleEvent;
+  const FrontFaceAlwaysCcw: Boolean);
 var
   Arrays: TGeometryArrays;
   RangeBeginIndex: Integer;
@@ -2938,13 +3015,16 @@ var
     I: Cardinal;
     NormalOrder: boolean;
   begin
+    NormalOrder := (not FrontFaceAlwaysCcw) or Arrays.FrontFaceCcw;
     case Arrays.Primitive of
       gpTriangles:
         begin
           I := 0;
           while I + 2 < Count do
           begin
-            Triangle(I, I + 1, I + 2);
+            if NormalOrder then
+              Triangle(I    , I + 1, I + 2) else
+              Triangle(I + 1, I    , I + 2);
             Inc(I, 3);
           end;
         end;
@@ -2953,14 +3033,15 @@ var
           I := 0;
           while I + 2 < Count do
           begin
-            Triangle(0, I + 1, I + 2);
+            if NormalOrder then
+              Triangle(0, I + 1, I + 2) else
+              Triangle(0, I + 2, I + 1);
             Inc(I);
           end;
         end;
       gpTriangleStrip:
         begin
           I := 0;
-          NormalOrder := true;
           while I + 2 < Count do
           begin
             if NormalOrder then
@@ -3012,7 +3093,8 @@ begin
   TriangleEvent(Shape, Position.Transform(Transform^), Normal, TexCoord, Face);
 end;
 
-procedure TShape.Triangulate(const TriangleEvent: TTriangleEvent);
+procedure TShape.Triangulate(const TriangleEvent: TTriangleEvent;
+  const FrontFaceAlwaysCcw: Boolean);
 var
   TR: TTriangulateRedirect;
 begin
@@ -3020,13 +3102,13 @@ begin
   try
     TR.Transform := @(State.Transformation.Transform);
     TR.TriangleEvent := TriangleEvent;
-    LocalTriangulate({$ifdef FPC}@{$endif}TR.LocalNewTriangle);
+    LocalTriangulate({$ifdef FPC}@{$endif}TR.LocalNewTriangle, FrontFaceAlwaysCcw);
   finally FreeAndNil(TR) end;
 end;
 
-function TShape.DebugInfo(const Indent: string): string;
+function TShape.DebugInfoWithoutChildren: String;
 begin
-  Result := Indent + NiceName + NL;
+  Result := NiceName;
 end;
 
 function TShape.NiceName: string;
@@ -3178,7 +3260,7 @@ function TShapeTreeGroup.DebugInfo(const Indent: string): string;
 var
   I: Integer;
 begin
-  Result := Indent + ClassName + NL;
+  Result := inherited; // will use DebugInfoWithoutChildren
   for I := 0 to FChildren.Count - 1 do
     Result := Result + FChildren[I].DebugInfo(Indent + Format('  %3d:', [I]));
 end;
@@ -3232,6 +3314,11 @@ begin
     Result := inherited;
 end;
 {$endif}
+
+function TShapeTreeSwitch.DebugInfoWithoutChildren: String;
+begin
+  Result := 'Switch (' + SwitchNode.X3DName + ')';
+end;
 
 { TShapeTreeTransform ---------------------------------------------------- }
 
@@ -3291,19 +3378,15 @@ begin
   Result := TransformFunctionality.Parent;
 end;
 
-function TShapeTreeTransform.DebugInfo(const Indent: string): string;
+function TShapeTreeTransform.DebugInfoWithoutChildren: String;
 var
-  I: Integer;
   TransformNodeName: String;
 begin
   if TransformFunctionality <> nil then
     TransformNodeName := TransformFunctionality.Parent.NiceName
   else
     TransformNodeName := 'nil';
-
-  Result := Indent + ClassName + ' (' + TransformNodeName + ')' + NL;
-  for I := 0 to Children.Count - 1 do
-    Result := Result + Children[I].DebugInfo(Indent + Format('  %3d:', [I]));
+  Result := ClassName + ' (' + TransformNodeName + ')';
 end;
 
 { TShapeTreeLOD ------------------------------------------------------- }
@@ -3375,6 +3458,11 @@ begin
 end;
 {$endif}
 
+function TShapeTreeLOD.DebugInfoWithoutChildren: String;
+begin
+  Result := 'LOD (' + LODNode.X3DName + ')';
+end;
+
 { TProximitySensorInstance ---------------------------------------------- }
 
 procedure TProximitySensorInstance.TraverseCore(const Func: TShapeTraverseFunc;
@@ -3401,9 +3489,9 @@ begin
   Result := nil;
 end;
 
-function TProximitySensorInstance.DebugInfo(const Indent: string = ''): string;
+function TProximitySensorInstance.DebugInfoWithoutChildren: String;
 begin
-  Result := Indent + 'ProximitySensor (' + Node.X3DName + ')' + NL;
+  Result := 'ProximitySensor (' + Node.X3DName + ')';
 end;
 
 { TVisibilitySensorInstance ---------------------------------------------- }
@@ -3432,9 +3520,9 @@ begin
   Result := nil;
 end;
 
-function TVisibilitySensorInstance.DebugInfo(const Indent: string = ''): string;
+function TVisibilitySensorInstance.DebugInfoWithoutChildren: String;
 begin
-  Result := Indent + 'VisibilitySensor (' + Node.X3DName + ')' + NL;
+  Result := 'VisibilitySensor (' + Node.X3DName + ')';
 end;
 
 { TShapeTreeIterator ----------------------------------------------------- }

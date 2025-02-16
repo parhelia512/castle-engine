@@ -1,5 +1,5 @@
 {
-  Copyright 2002-2023 Michalis Kamburelis.
+  Copyright 2002-2025 Michalis Kamburelis.
 
   This file is part of "Castle Game Engine".
 
@@ -217,8 +217,11 @@
   https://gitlab.com/freepascal.org/fpc/source/-/commit/693491048bf2c6f9122a0d8b044ad0e55382354d }
 {$ifdef VER3_0} {$define GENERICS_CONSTREF} {$endif}
 {$ifdef VER3_2} {$define GENERICS_CONSTREF} {$endif}
-{$if defined(LINUX) and defined(CPUARM) and defined(VER3_2_3)}
-  // On 32-bit Raspberry Pi, FPC 3.2.3 (fixes_3_2 branch, as of 2023-12-23) it no longer uses "constref".
+{$if defined(VER3_2_3)}
+  { FPC 3.2.3 (fixes_3_2 branch, as of 2023-12-23) no longer uses "constref".
+    Confirmed on Linux/Arm32, Linux/Arm64(Aarch64), Linux/x86_64,
+    see also sources:
+    https://gitlab.com/freepascal.org/fpc/source/-/blob/fixes_3_2/packages/rtl-generics/src/generics.collections.pas?ref_type=heads. }
   {$undef GENERICS_CONSTREF}
 {$endif}
 
@@ -291,6 +294,10 @@
 
 { OpenGL[ES] ------------------------------------------------------------------ }
 
+{ OpenGL / OpenGLES calls are callbacks, so e.g. writing
+  "Assert(Assigned(glGenerateMipmap))" is valid. }
+{$define CASTLE_GL_USES_CALLBACKS}
+
 (*Whether we use OpenGL ES or normal OpenGL.
   OpenGL ES is by default used for mobile devices.
   For testing, you can also use OpenGL ES on normal desktop OSes
@@ -299,7 +306,7 @@
 
   CGE units that directly access OpenGL(ES) should use this line:
 
-    {$ifdef FPC} CastleGL, {$else} OpenGL, OpenGLext, {$endif}
+    {$ifdef OpenGLES} CastleGLES, {$else} CastleGL, {$endif}
 
   Applications using CGE (including CGE examples) cannot include castleconf.inc
   (it's internal what it defines) and usually should not need to access OpenGL(ES)
@@ -308,18 +315,24 @@
 
     {$ifdef ANDROID} {$define OpenGLES} {$endif}
     {$ifdef CASTLE_IOS} {$define OpenGLES} {$endif}
-    {$ifdef FPC}
-      {$ifdef OpenGLES} CastleGLES, {$else} GL, GLExt, {$endif}
-    {$else}
-      OpenGL, OpenGLext,
-    {$endif}
+    {$ifdef OpenGLES} CastleGLES, {$else} CastleGL, {$endif}
 
   The above code supports both FPC and Delphi, and supports both OpenGL and OpenGLES.
-  You can simplify it in a particular application, if you don't support e.g. both FPC and Delphi.
+  Please note that above recommendation may change from time to time.
 *)
 { $define OpenGLES}
 {$ifdef ANDROID} {$define OpenGLES} {$endif}
 {$ifdef CASTLE_IOS} {$define OpenGLES} {$endif}
+{$ifdef WASI}
+  {$define OpenGLES}
+  {$define CastleGLES := CastleInternalWebGL}
+  {$undef CASTLE_GL_USES_CALLBACKS}
+  { Using WebGL API for rendering. Use this symbol when necessary to do
+    something different between WebGL and OpenGLES.
+    We try to hide many differences at the CastleInternalWebGL unit,
+    but not everything is handled there. }
+  {$define CASTLE_WEBGL}
+{$endif}
 
 { NX supports OpenGL and OpenGLES (that's public information,
   https://wccftech.com/nintendo-switch-supports-vulkan/ ).
@@ -327,14 +340,8 @@
 {$ifdef CASTLE_NINTENDO_SWITCH} {$define OpenGLES} {$endif}
 
 {$ifdef OpenGLES}
-  {$ifndef FPC}
-    {$error We do not support OpenGLES (necessary for Android, iOS) with Delphi yet}
-  {$else}
-    {$ifdef CASTLE_NINTENDO_SWITCH}
-      {$define CastleGL := CastleInternalNxGLES20}
-    {$else}
-      {$define CastleGL := CastleGLES}
-    {$endif}
+  {$ifdef CASTLE_NINTENDO_SWITCH}
+    {$define CastleGLES := CastleInternalNxGLES}
   {$endif}
 
   { This is necessary for OpenGL ES 2.0 versions that support only 16-bit indexes,
@@ -376,7 +383,9 @@
   }
   {$define GLIndexesShort}
 {$else}
-  {$define CastleGL := GL, GLExt}
+  { For OpenGL (not ES), we use our own fork of dglOpenGL
+    (with all compilers and platforms now). }
+  {$define USE_DGL}
 {$endif}
 
 { PNG ------------------------------------------------------------------------ }
@@ -571,5 +580,51 @@
 {$ifdef FPC}
   {$define CASTLE_SCRIPT_FPC}
 {$endif}
+
+{ Indicates units like X, XLib are available on this platform. }
+{$if defined(FPC) and (defined(LINUX) or defined(FREEBSD))}
+  {$define UNIX_WITH_X}
+{$endif}
+
+{ FPC 3.3.1 produces many false warnings. }
+{$ifdef FPC}
+  {$ifndef VER3_0}
+    {$ifndef VER3_2}
+      { 2 warnings below are common because of case analysis.
+        We tried to adjust to them
+        ( https://castle-engine.io/coding_conventions#case_analysis )
+        but in some cases there's no good adjustment of code.
+        Let's disable them for now. }
+      {$warn 6060 off} // case statement does not handle all possible cases
+      {$warn 6018 off} // unreachable code
+      { This happens because unfortunately FPC 3.3.1 doesn't understand
+        that writing e.g. "WriteBuffer(Tmp, SizeOf(Tmp));" means we use Tmp value. }
+      {$warn 5027 off} // Local variable is assigned but never used
+    {$endif}
+  {$endif}
+{$endif}
+
+{ WebAssembly --------------------------------------------------------------- }
+
+{$ifdef WASI}
+  {$undef HAS_FP_HTTP_CLIENT}
+  {$undef USE_VAMPYRE_IMAGING} // Vampyre Imaging doesn't work with WASI
+  // CastleDynLibs on WASI not tested
+  {$undef ALLOW_DLOPEN_FROM_UNIT_INITIALIZATION}
+{$endif}
+
+{ Workaround ParamStr issue -------------------------------------------------- }
+
+{$ifdef ANDROID}
+  { Android 15, Google Pixel 6a:
+    Argv[...] are invalid pointers, and so using ParamStr(...) crashes.
+    See CastleParameters unit, InitializationParams comments for more
+    information. }
+  {$define CASTLE_PARAMSTR_BUGGY}
+{$endif}
+
+{ Log Argv reading in CastleParameters, to investigate bugs like
+  CASTLE_PARAMSTR_BUGGY. }
+{.$define CASTLE_ANDROID_ARGV_LOGGING}
 
 {$endif not CASTLE_CONF_INCLUDED}

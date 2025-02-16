@@ -512,10 +512,15 @@ begin
     Model1.BaseUrl);
   try
     { We already loaded all inlines (in CheckNodesStructurallyEqual).
-      We have to mark it now, by setting Loaded := true field as necessary
-      inside inline nodes --- otherwise, they could be loaded again
-      (adding content to already existing nodes, making content loaded
-      more than once). }
+
+      In case targer Inline content was effectively loaded by using
+      VRML1Children from source Inline,
+      we have to use LoadedInlineDirectly, to
+      - have InlineLoaded := true
+      - have TInlineNode.FInlined correct.
+
+      Otherwise, target Inline would not realize that contents are loaded.
+      (And e.g. they would be loaded again, duplicating content). }
     if Result is TInlineNode then
     begin
       TInlineNode(Result).LoadedInlineDirectly;
@@ -523,14 +528,9 @@ begin
 
     if Result is TX3DRootNode then
     begin
-      { copy TX3DRootNode special fields, like TX3DRootNode.DeepCopyCore.
+      { Assign TX3DRootNode special fields.
         This is necessary for WrapRootNode working Ok lower in this file. }
-      TX3DRootNode(Result).HasForceVersion := (Model1 as TX3DRootNode).HasForceVersion;
-      TX3DRootNode(Result).ForceVersion := (Model1 as TX3DRootNode).ForceVersion;
-      TX3DRootNode(Result).Scale := (Model1 as TX3DRootNode).Scale;
-      TX3DRootNode(Result).Profile := (Model1 as TX3DRootNode).Profile;
-      TX3DRootNode(Result).Components.Assign((Model1 as TX3DRootNode).Components);
-      TX3DRootNode(Result).Meta.Assign((Model1 as TX3DRootNode).Meta);
+      TX3DRootNode(Result).InternalAssignRootNodeProps(Model1 as TX3DRootNode);
     end;
 
     { TODO: the code below doesn't deal efficiently with the situation when single
@@ -765,6 +765,8 @@ begin
 end;
 
 class function TNodeInterpolator.LoadAnimFramesToKeyNodes(const Stream: TStream; const BaseUrl: String): TAnimationList;
+const
+  GltfJsonMimeType = 'model/gltf+json';
 
   function LoadGLTFFromString(const Contents: String; const BaseUrl: String): TX3DRootNode;
   var
@@ -772,7 +774,7 @@ class function TNodeInterpolator.LoadAnimFramesToKeyNodes(const Stream: TStream;
   begin
     SStream := TStringStream.Create(Contents);
     try
-      Result := LoadGLTF(SStream, BaseUrl);
+      Result := LoadNode(SStream, BaseUrl, GltfJsonMimeType);
     finally FreeAndNil(SStream) end;
   end;
 
@@ -864,7 +866,7 @@ class function TNodeInterpolator.LoadAnimFramesToKeyNodes(const Stream: TStream;
             if (MimeType = '') or (MimeType = 'model/x3d+xml') then
               NewNode := LoadX3DXmlInternal(FrameElement.ChildElement('X3D'), AbsoluteBaseUrl)
             else
-            if (MimeType = 'model/gltf+json') then
+            if (MimeType = GltfJsonMimeType) then
               NewNode := LoadGLTFFromString(FrameElement.TextData, AbsoluteBaseUrl)
             else
               raise Exception.CreateFmt('Cannot use mime_type "%s" for a frame in castle-anim-frames', [
@@ -1149,4 +1151,24 @@ begin
   finally FreeAndNil(BakedAnimations) end;
 end;
 
+function LoadAnimFrames(const Stream: TStream; const BaseUrl: String): TX3DRootNode;
+var
+  Animations: TNodeInterpolator.TAnimationList;
+begin
+  Animations := TNodeInterpolator.LoadAnimFramesToKeyNodes(Stream, BaseUrl);
+  try
+    Result := TNodeInterpolator.LoadToX3D(Animations);
+  finally FreeAndNil(Animations) end;
+end;
+
+var
+  ModelFormat: TModelFormat;
+initialization
+  ModelFormat := TModelFormat.Create;
+  ModelFormat.OnLoad := {$ifdef FPC}@{$endif} LoadAnimFrames;
+  ModelFormat.MimeTypes.Add('application/x-castle-anim-frames');
+  ModelFormat.FileFilterName := 'Castle Animation Frames (*.castle-anim-frames, *.kanim)';
+  ModelFormat.Extensions.Add('.castle-anim-frames');
+  ModelFormat.Extensions.Add('.kanim');
+  RegisterModelFormat(ModelFormat);
 end.

@@ -22,8 +22,8 @@ unit TestCastleVectors;
 interface
 
 uses
-  Classes, SysUtils{$ifndef CASTLE_TESTER}, FpcUnit, TestUtils, TestRegistry,
-  CastleTestCase{$else}, CastleTester{$endif}, CastleVectors;
+  Classes, SysUtils,
+  CastleTester, CastleVectors;
 
 type
   TTestCastleVectors = class(TCastleTestCase)
@@ -62,6 +62,7 @@ type
     procedure TestRotationZeroAxis;
     procedure TestVectorsList;
     procedure TestToString;
+    procedure TestBasicVectorMatrix;
   end;
 
 function RandomVector: TVector3;
@@ -475,8 +476,8 @@ const
     (X: 2; Y: 3; Z: 0),
     (X: 2; Y: 1; Z: 0),
     (X: 6; Y: 2; Z: 0) );
-  CCWPolyIndex: array [0..6] of LongInt = (0, 1, 5, 2, 3, 4, 999);
-  CWPolyIndex: array [0..6] of LongInt = (666, 4, 105, 3, 2, 1, 0);
+  CCWPolyIndex: array [0..6] of Int32 = (0, 1, 5, 2, 3, 4, 999);
+  CWPolyIndex: array [0..6] of Int32 = (666, 4, 105, 3, 2, 1, 0);
 begin
   AssertVectorEquals(
     Vector3(0, 0, 1),
@@ -1026,7 +1027,7 @@ drastically different results for them, due to one matrix resulting
 in determinant close enough to Single epsilon, and other not.
 
 ------------------------------------------------------------------------------
-Exact test input, generated from testcase on https://github.com/castle-engine/view3dscene/issues/35,
+Exact test input, generated from testcase on https://github.com/castle-engine/castle-model-viewer/issues/35,
 with mesh renderer code:
 
     if Arrays.Count = 629 then
@@ -1264,13 +1265,22 @@ var
   M4: TMatrix4;
 begin
   V2 := Vector2(0, 123.456);
-  AssertEquals('0 123.46', V2.ToString);
+  AssertEquals('0 123.456', V2.ToString);
+
+  V2 := Vector2(0, 123.12345678);
+  AssertEquals('0 123.12346', V2.ToString); // 5 digits after dot are kept now
 
   V3 := Vector3(0, 123.456, 78.9);
-  AssertEquals('0 123.46 78.9', V3.ToString);
+  AssertEquals('0 123.456 78.9', V3.ToString);
+
+  V3 := Vector3(0, 123.12345678, 78.9);
+  AssertEquals('0 123.12346 78.9', V3.ToString);
 
   V4 := Vector4(0, 123.456, 78.9, 99.99);
-  AssertEquals('0 123.46 78.9 99.99', V4.ToString);
+  AssertEquals('0 123.456 78.9 99.99', V4.ToString);
+
+  V4 := Vector4(0, 123.12345678, 78.9, 99.99);
+  AssertEquals('0 123.12346 78.9 99.99', V4.ToString);
 
   M2.Rows[0] := Vector2(1, 2);
   M2.Rows[1] := Vector2(3, 4);
@@ -1298,6 +1308,18 @@ begin
     '9 10 11 12' + LineEnding +
     '13 14 15 16',
     M4.ToString);
+end;
+
+procedure TTestCastleVectors.TestBasicVectorMatrix;
+var
+  M: TMatrix4;
+  V: TVector3;
+begin
+  // vectors
+  M := TranslationMatrix(10, 20, 30);
+  V := Vector3(1, 2, 3);
+  V := M.MultPoint(V);
+  AssertVectorEquals(Vector3(11, 22, 33), V);
 end;
 
 initialization

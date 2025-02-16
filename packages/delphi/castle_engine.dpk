@@ -26,20 +26,18 @@ package castle_engine;
 {$DEFINE DEBUG}
 {$DEFINE CASTLE_DELPHI_PACKAGE}
 {$ENDIF IMPLICITBUILDING}
-{$DESCRIPTION 'Castle Game Engine - TCastleControl component'}
+{$DESCRIPTION 'Castle Game Engine - base'}
 {$IMPLICITBUILD ON}
 
 requires
   rtl,
-  vcl,
   xmlrtl,
-  fmx,
   IndySystem,
   IndyProtocols,
   IndyCore;
 
 contains
-  castleinternalcontainer in '..\..\src\delphi\castleinternalcontainer.pas',
+  castlecontrolcontainer in '..\..\src\delphi\castlecontrolcontainer.pas',
   castleinternaldelphiutils in '..\..\src\delphi\castleinternaldelphiutils.pas',
   castleapplicationproperties in '..\..\src\base\castleapplicationproperties.pas',
   castleclassutils in '..\..\src\base\castleclassutils.pas',
@@ -96,6 +94,7 @@ contains
   x3dloadinternalgltf in '..\..\src\scene\load\x3dloadinternalgltf.pas',
   x3dloadinternalimage in '..\..\src\scene\load\x3dloadinternalimage.pas',
   x3dloadinternalmd3 in '..\..\src\scene\load\md3\x3dloadinternalmd3.pas',
+  castleifc in '..\..\src\scene\load\ifc\castleifc.pas',
   x3dloadinternalobj in '..\..\src\scene\load\x3dloadinternalobj.pas',
   x3dloadinternalstl in '..\..\src\scene\load\x3dloadinternalstl.pas',
   x3dloadinternaltiledmap in '..\..\src\scene\load\x3dloadinternaltiledmap.pas',
@@ -218,7 +217,6 @@ contains
   custapp in '..\..\src\compatibility\delphi-only\custapp.pas',
   dom in '..\..\src\compatibility\delphi-only\dom.pas',
   FPHashCompatibility in '..\..\src\compatibility\delphi-only\FPHashCompatibility.pas',
-  rttiutils in '..\..\src\compatibility\delphi-only\rttiutils.pas',
   singleinstance in '..\..\src\compatibility\delphi-only\singleinstance.pas',
   uriparser in '..\..\src\compatibility\delphi-only\uriparser.pas',
   xmlread in '..\..\src\compatibility\delphi-only\xmlread.pas',
@@ -228,11 +226,9 @@ contains
   jsonparser in '..\..\src\compatibility\delphi-only\fcl-json\jsonparser.pas',
   jsonreader in '..\..\src\compatibility\delphi-only\fcl-json\jsonreader.pas',
   jsonscanner in '..\..\src\compatibility\delphi-only\fcl-json\jsonscanner.pas',
-  castleinternalcontextbase in '..\..\src\window\windows\castleinternalcontextbase.pas',
-  castleinternalcontextwgl in '..\..\src\window\windows\castleinternalcontextwgl.pas',
-  PasDblStrUtils in '..\..\src\scene\load\pasgltf\PasDblStrUtils.pas',
-  PasGLTF in '..\..\src\scene\load\pasgltf\PasGLTF.pas',
-  PasJSON in '..\..\src\scene\load\pasgltf\PasJSON.pas',
+  CastlePasDblStrUtils in '..\..\src\scene\load\pasgltf\CastlePasDblStrUtils.pas',
+  CastlePasGLTF in '..\..\src\scene\load\pasgltf\CastlePasGLTF.pas',
+  CastlePasJSON in '..\..\src\scene\load\pasgltf\CastlePasJSON.pas',
   castlecontrols in '..\..\src\ui\castlecontrols.pas',
   castledialogviews in '..\..\src\ui\castledialogviews.pas',
   castleflasheffect in '..\..\src\ui\castleflasheffect.pas',
@@ -307,6 +303,7 @@ contains
   castleviewport in '..\..\src\scene\castleviewport.pas',
   x3dcamerautils in '..\..\src\scene\x3dcamerautils.pas',
   x3dtime in '..\..\src\scene\x3dtime.pas',
+  castlelivingbehaviors in '..\..\src\scene\castlelivingbehaviors.pas',
   kraft in '..\..\src\physics\kraft\kraft.pas',
   ImagingXpm in '..\..\src\vampyre_imaginglib\src\Extensions\ImagingXpm.pas',
   ImagingPcx in '..\..\src\vampyre_imaginglib\src\Extensions\ImagingPcx.pas',
@@ -314,13 +311,22 @@ contains
   castlescriptarrays in '..\..\src\castlescript\castlescriptarrays.pas',
   castlescriptimages in '..\..\src\castlescript\castlescriptimages.pas',
   castlescriptvectors in '..\..\src\castlescript\castlescriptvectors.pas',
-  fmx.castlecontrol in '..\..\src\delphi\fmx.castlecontrol.pas',
-  vcl.castlecontrol in '..\..\src\delphi\vcl.castlecontrol.pas',
   castleinternalshapesrenderer in '..\..\src\scene\castleinternalshapesrenderer.pas',
   castleinternalfilemonitor in '..\..\src\files\castleinternalfilemonitor.pas',
   castleinternalscreeneffects in '..\..\src\scene\castleinternalscreeneffects.pas',
   castleinternalnodesunsupported in '..\..\src\scene\x3d\castleinternalnodesunsupported.pas',
-  imjidctasm in '..\..\src\vampyre_imaginglib\src\Source\JpegLib\imjidctasm.pas';
+  imjidctasm in '..\..\src\vampyre_imaginglib\src\Source\JpegLib\imjidctasm.pas',
+  castleinternalcontextbase in '..\..\src\base_rendering\castleinternalcontextbase.pas',
+  castleinternalcontextegl in '..\..\src\base_rendering\castleinternalcontextegl.pas',
+  castleinternalcontextglx in '..\..\src\base_rendering\castleinternalcontextglx.pas',
+  castleinternalcontextwgl in '..\..\src\base_rendering\castleinternalcontextwgl.pas',
+  castleinternalegl in '..\..\src\base_rendering\castleinternalegl.pas',
+  castlegl in '..\..\src\base_rendering\dglopengl\castlegl.pas',
+  castleinternalurlutils in '..\..\src\files\castleinternalurlutils.pas',
+  castletransformmanipulate in '..\..\src\scene\castletransformmanipulate.pas',
+  castleinternaltransformdata in '..\..\src\scene\castleinternaltransformdata.pas',
+  castleinternalsteamapi in '..\..\src\services\steam\castleinternalsteamapi.pas',
+  castlesteam in '..\..\src\services\steam\castlesteam.pas';
 
 end.
 

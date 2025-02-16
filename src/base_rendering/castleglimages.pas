@@ -63,10 +63,11 @@ unit CastleGLImages;
 interface
 
 uses SysUtils, Generics.Collections, Classes,
-  {$ifdef FPC} CastleGL, {$else} OpenGL, OpenGLext, {$endif}
+  {$ifdef OpenGLES} CastleGLES, {$else} CastleGL, {$endif}
   CastleImages, CastleVectors, CastleGLUtils, CastleTimeUtils,
   CastleTextureImages, CastleVideos, CastleInternalCompositeImage, CastleRectangles,
-  CastleGLShaders, CastleColors, CastleUtils, CastleRenderOptions, CastleInternalGLUtils;
+  CastleGLShaders, CastleColors, CastleUtils, CastleRenderOptions,
+  CastleInternalGLUtils, CastleInternalFileMonitor;
 
 {$define read_interface}
 
@@ -130,6 +131,7 @@ uses SysUtils, Generics.Collections, Classes,
 implementation
 
 uses Math, Generics.Defaults,
+  {$ifdef WASI} Job.Js, {$endif}
   CastleLog, CastleGLVersion,
   CastleApplicationProperties, CastleStringUtils, CastleUriUtils,
   CastleRenderContext;
